@@ -76,21 +76,14 @@ jobs:
           
           while ! kubectl -n demo get secret demo-secret; do
            ((max_attempts++)) && ((max_attempts==30)) && exit 1
-           echo "Waiting for secret to be created..."
+           echo "Waiting for demo-secret secret to be created..."
            sleep 1
           done
 
           SECRET_VALUE="$(kubectl -n demo get secret demo-secret -o jsonpath='{.data.secret-foo}' | base64 -d)"
           if [ "$SECRET_VALUE" == "BAR" ]; then
-            echo "Secret successfully retrieve from Google Cloud Secret Manager"
+            echo "Secret value successfully retrieved from Google Cloud Secret Manager"
           else
             echo "Failed to retrieve secret value from Google Cloud Secret Manager"
             exit 1
           fi
-
-      - name: Breakpoint if failed
-        if: failure()
-        uses: namespacelabs/breakpoint-action@v0
-        with:
-          duration: 10m
-          authorized-users: annervisser

@@ -1,3 +1,5 @@
+name: Demo connecting external-secrets to Google Cloud Secret Manager
+
 on:
   workflow_dispatch:
 
@@ -32,6 +34,8 @@ jobs:
           kubectl -n external-secrets patch deployment external-secrets --type='json' -p='[{"op": "add","path": "/spec/template/spec/volumes","value": [{"name": "credentials","projected": {"sources": [{"configMap": {"name": "adc","items": [{"key": "adc.json", "path": "adc.json"},{"key": "token", "path": "token"}]}}]}}]}]'
           kubectl -n external-secrets patch deployment external-secrets --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts", "value": [{"name": "credentials", "mountPath": "/var/run/secrets/credentials"}]}]'
           kubectl -n external-secrets set env deployment/external-secrets GOOGLE_APPLICATION_CREDENTIALS=/var/run/secrets/credentials/adc.json
+          
+          kubectl -n external-secrets rollout status --watch --timeout=90s deployment/external-secrets
 
       - name: Demo
         run: |

@@ -36,6 +36,7 @@ jobs:
           kubectl -n external-secrets set env deployment/external-secrets GOOGLE_APPLICATION_CREDENTIALS=/var/run/secrets/credentials/adc.json
           
           kubectl -n external-secrets rollout status --watch --timeout=90s deployment/external-secrets
+          kubectl -n external-secrets rollout status --watch --timeout=90s deployment/external-secrets-webhook
 
       - name: Demo
         run: |

@@ -74,7 +74,9 @@ jobs:
                   key: FOO
           EOF
           
-          kubectl -n demo wait --for=create secret demo-secret --timeout=30s
+          while ! kubectl -n demo get secret demo-secret; do
+           sleep 1
+          done
           
           SECRET_VALUE="$(kubectl -n demo get secret demo-secret -o jsonpath='{.data.secret-foo}' | base64 -d)"
           if [ "$SECRET_VALUE" == "BAR" ]; then

@@ -1,0 +1,79 @@
+on:
+  workflow_dispatch:
+
+jobs:
+  external-secrets:
+    runs-on: namespace-profile-default
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4.3.0
+
+      - name: Deploy external secrets
+        run: |
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm install external-secrets external-secrets/external-secrets --namespace external-secrets --create-namespace
+
+      - name: Authorize external secrets to GCP service account
+        run: |
+          # See https://namespace.so/docs/federation/gcp#obtaining-gcp-credentials-from-a-namespace-workload
+          # --service_account format is <service-account-name>@<project>.iam.gserviceaccount.com
+          # --workload_identity_provider format is projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/<POOL_ID>/providers/<PROVIDER_ID>
+          nsc gcp impersonate --service_account "${{secrets.GCP_SERVICE_ACCOUNT}}" --workload_identity_provider "${{secrets.GCP_IDP}}" --write_creds="impersonate.json"
+          
+          # Find out where the token was stored
+          GCP_TOKEN_PATH="$(jq -r .credential_source.file <impersonate.json)"
+          
+          # Prepare config file with fixed token path
+          jq '.credential_source.file = "/var/run/secrets/credentials/token"' impersonate.json > adc.json
+          
+          kubectl -n external-secrets create configmap adc --from-file=adc.json --from-file=token="$GCP_TOKEN_PATH"
+          
+          kubectl -n external-secrets patch deployment external-secrets --type='json' -p='[{"op": "add","path": "/spec/template/spec/volumes","value": [{"name": "credentials","projected": {"sources": [{"configMap": {"name": "adc","items": [{"key": "adc.json", "path": "adc.json"},{"key": "token", "path": "token"}]}}]}}]}]'
+          kubectl -n external-secrets patch deployment external-secrets --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts", "value": [{"name": "credentials", "mountPath": "/var/run/secrets/credentials"}]}]'
+          kubectl -n external-secrets set env deployment/external-secrets GOOGLE_APPLICATION_CREDENTIALS=/var/run/secrets/credentials/adc.json
+
+      - name: Demo
+        run: |
+          kubectl create namespace demo
+
+          kubectl apply -f - <<EOF
+          apiVersion: external-secrets.io/v1beta1
+          kind: SecretStore
+          metadata:
+            name: demo-store
+            namespace: demo
+          spec:
+            provider:
+              gcpsm:
+                projectID: ${{secrets.GCP_PROJECT_ID}}
+          EOF
+
+          kubectl apply -f - <<EOF
+          apiVersion: external-secrets.io/v1beta1
+          kind: ExternalSecret
+          metadata:
+            name: example
+            namespace: demo
+          spec:
+            refreshInterval: 1h
+            secretStoreRef:
+              name: demo-store
+              kind: SecretStore
+            target:
+              name: demo-secret
+              creationPolicy: Owner
+            data:
+              - secretKey: secret-foo
+                remoteRef:
+                  key: FOO
+          EOF
+          
+          kubectl -n demo wait --for=create secret demo-secret --timeout=30s
+          
+          SECRET_VALUE="$(kubectl -n demo get secret demo-secret -o jsonpath='{.data.secret-foo}' | base64 -d)"
+          if [ "$SECRET_VALUE" == "BAR" ]; then
+            echo "Secret successfully retrieve from Google Cloud Secret Manager"
+          else
+            echo "Failed to retrieve secret value from Google Cloud Secret Manager"
+            exit 1
+          fi

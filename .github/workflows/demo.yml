@@ -82,3 +82,10 @@ jobs:
             echo "Failed to retrieve secret value from Google Cloud Secret Manager"
             exit 1
           fi
+
+      - name: Breakpoint if tests failed
+        if: failure()
+        uses: namespacelabs/breakpoint-action@v0
+        with:
+          duration: 10m
+          authorized-users: annervisser
